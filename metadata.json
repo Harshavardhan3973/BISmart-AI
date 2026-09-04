@@ -1,0 +1,6 @@
+{
+  "name": "BISmart AI",
+  "description": "AI-powered conversational assistant for Indian Standards and Bureau of Indian Standards (BIS) services, built for Smart India Hackathon 2026 by Team BISync (Problem Statement 26107).",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "Admin": {
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "createdAt": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] }
+      },
+      "required": ["email", "role"]
+    },
+    "UserProfile": {
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "SiteContent": {
+      "type": "object",
+      "properties": {
+        "heroHeadline": { "type": "string", "maxLength": 300 },
+        "heroSubheadline": { "type": "string", "maxLength": 1000 },
+        "heroBadge": { "type": "string", "maxLength": 150 },
+        "impactHeading": { "type": "string", "maxLength": 300 },
+        "impactSubheading": { "type": "string", "maxLength": 1000 },
+        "aboutMission": { "type": "string", "maxLength": 1500 },
+        "aboutProblem": { "type": "string", "maxLength": 2000 },
+        "aboutSolution": { "type": "string", "maxLength": 2000 },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["updatedAt"]
+    },
+    "StandardItem": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string", "maxLength": 150 },
+        "title": { "type": "string", "maxLength": 300 },
+        "category": { "type": "string", "maxLength": 100 },
+        "mandatory": { "type": "boolean" },
+        "qcoNotification": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "scheme": { "type": "string", "maxLength": 200 },
+        "scope": { "type": "array", "items": { "type": "string" } },
+        "certificationSteps": { "type": "array", "items": { "type": "string" } },
+        "keyDocuments": { "type": "array", "items": { "type": "string" } },
+        "msmeBenefits": { "type": "string", "maxLength": 500 },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id", "code", "title", "description", "category", "scheme"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": "Admin",
+      "description": "Authorized admin users with permission to edit site content"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Registered public citizen/business user profiles"
+    },
+    "/site_content/{contentDocId}": {
+      "schema": "SiteContent",
+      "description": "Global editable site text and metadata for hero, impact, and about sections"
+    },
+    "/standards/{standardId}": {
+      "schema": "StandardItem",
+      "description": "Dynamic catalog of gazetted Indian Standards maintained by admins"
+    }
+  }
+}

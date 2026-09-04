@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Connection health check
+    match /_connection_test/{testId} {
+      allow read: if true;
+    }
+    match /test/{testId} {
+      allow read: if true;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email != null && request.auth.token.email == 'vpkngs@gmail.com')
+      );
+    }
+
+    // Admins collection: only admins can view or register admin docs
+    match /admins/{adminUid} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == adminUid && request.auth.token.email == 'vpkngs@gmail.com');
+    }
+
+    // User profiles: public read for owner, user can create/update their own profile
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Public readable site content: only admins can write
+    match /site_content/{contentDocId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Public readable standards repository: only admins can create, update, or delete standards
+    match /standards/{standardId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
