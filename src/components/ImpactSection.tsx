@@ -39,7 +39,7 @@ export const ImpactSection: React.FC = () => {
       });
       setEditing(false);
     } catch (e) {
-      console.error(e);
+      console.warn('Site content update notice:', e);
     } finally {
       setSaving(false);
     }

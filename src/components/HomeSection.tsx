@@ -54,7 +54,7 @@ export const HomeSection: React.FC<HomeSectionProps> = ({ setActiveTab, onAskQue
       });
       setEditingHero(false);
     } catch (e) {
-      console.error(e);
+      console.warn('Site content update notice:', e);
     } finally {
       setIsSaving(false);
     }

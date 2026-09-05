@@ -1,14 +1,10 @@
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
+import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Fallback curated knowledge base answers if no API key is set or during high demand
 const KNOWLEDGE_FALLBACKS: Record<string, { answer: string; standard: string; scheme: string; portal: string; steps: string }> = {
@@ -79,7 +75,7 @@ const KNOWLEDGE_FALLBACKS: Record<string, { answer: string; standard: string; sc
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
 
@@ -317,23 +313,31 @@ At the very bottom of EVERY answer, you MUST append a distinct section formatted
     }
   });
 
-  // Mount Vite middleware in development
-  if (process.env.NODE_ENV !== "production") {
+  // Check if we are running in production or Cloud Run container
+  const distPath = path.join(process.cwd(), "dist");
+  const hasBuiltDist = fs.existsSync(path.join(distPath, "index.html"));
+  const isProduction =
+    process.env.NODE_ENV === "production" ||
+    process.env.K_SERVICE !== undefined ||
+    process.argv[1]?.includes("dist") ||
+    hasBuiltDist;
+
+  if (isProduction && hasBuiltDist) {
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  } else {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`BISmart AI server running on port ${PORT}`);
+    console.log(`BISmart AI server running on http://0.0.0.0:${PORT} (PORT=${PORT})`);
   });
 }
 

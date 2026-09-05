@@ -26,14 +26,20 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        (request.auth.token.email != null && request.auth.token.email == 'vpkngs@gmail.com')
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'vpkngs@gmail.com' ||
+          request.auth.token.email == 'egudurumaheswari6@gmail.com'
+        ))
       );
     }
 
     // Admins collection: only admins can view or register admin docs
     match /admins/{adminUid} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == adminUid && request.auth.token.email == 'vpkngs@gmail.com');
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == adminUid && (
+        request.auth.token.email == 'vpkngs@gmail.com' ||
+        request.auth.token.email == 'egudurumaheswari6@gmail.com'
+      ));
     }
 
     // User profiles: public read for owner, user can create/update their own profile

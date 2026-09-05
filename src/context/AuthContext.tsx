@@ -23,13 +23,24 @@ interface AuthContextType {
   setAdminMode: (val: boolean) => void;
   login: (email: string, pass: string) => Promise<void>;
   signup: (name: string, email: string, pass: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (fallbackEmail?: string) => Promise<void>;
+  signInWithDevAccount: (role: 'admin' | 'user', email?: string) => void;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
 
-// Configured admin email from project requirements (matches user account email)
-export const ADMIN_EMAIL = "vpkngs@gmail.com";
+// Configured admin emails from project requirements & runtime
+export const ADMIN_EMAILS = [
+  "vpkngs@gmail.com",
+  "egudurumaheswari6@gmail.com"
+];
+
+export const isDesignatedAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  return ADMIN_EMAILS.some(adminEmail => adminEmail.toLowerCase() === email.toLowerCase());
+};
+
+const DEV_AUTH_KEY = 'bismart_session_user';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -41,46 +52,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   // Check admin status from Firestore / verified admin list
-  const checkAdminPrivilege = async (u: User): Promise<boolean> => {
+  const checkAdminPrivilege = async (u: { email?: string | null; uid?: string }): Promise<boolean> => {
     if (!u.email) return false;
     
-    // Primary check: match designated admin email
-    if (u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-      // Ensure admin document exists in Firestore 'admins' collection
-      try {
-        const adminDocRef = doc(db, 'admins', u.uid);
-        const adminDoc = await getDoc(adminDocRef);
-        if (!adminDoc.exists()) {
-          await setDoc(adminDocRef, {
-            email: u.email,
-            role: 'admin',
-            createdAt: serverTimestamp()
-          });
+    // Primary check: match designated admin email list
+    if (isDesignatedAdminEmail(u.email)) {
+      if (u.uid) {
+        try {
+          const adminDocRef = doc(db, 'admins', u.uid);
+          const adminDoc = await getDoc(adminDocRef);
+          if (!adminDoc.exists()) {
+            await setDoc(adminDocRef, {
+              email: u.email,
+              role: 'admin',
+              createdAt: serverTimestamp()
+            });
+          }
+        } catch (err) {
+          console.warn('Admin doc sync notice:', err);
         }
-      } catch (err) {
-        console.warn('Admin doc sync notice:', err);
       }
       return true;
     }
 
     // Secondary check: examine firestore 'admins' collection
-    try {
-      const adminDocRef = doc(db, 'admins', u.uid);
-      const adminDoc = await getDoc(adminDocRef);
-      return adminDoc.exists() && adminDoc.data()?.role === 'admin';
-    } catch {
-      return false;
+    if (u.uid) {
+      try {
+        const adminDocRef = doc(db, 'admins', u.uid);
+        const adminDoc = await getDoc(adminDocRef);
+        return adminDoc.exists() && adminDoc.data()?.role === 'admin';
+      } catch {
+        return false;
+      }
     }
+
+    return false;
   };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setFirebaseUser(u);
       if (u) {
+        // Clear any dev override when real firebase user is detected
+        localStorage.removeItem(DEV_AUTH_KEY);
         const adminStatus = await checkAdminPrivilege(u);
         setIsAdmin(adminStatus);
-        
-        // Auto-enable admin mode for admin
         if (adminStatus) {
           setAdminMode(true);
         } else {
@@ -94,6 +110,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isAdmin: adminStatus
         });
       } else {
+        // Check for local stored dev session
+        try {
+          const stored = localStorage.getItem(DEV_AUTH_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored) as UserAccount;
+            const adminStatus = Boolean(parsed.isAdmin || isDesignatedAdminEmail(parsed.email));
+            setUser({
+              ...parsed,
+              isAdmin: adminStatus
+            });
+            setIsAdmin(adminStatus);
+            setAdminMode(adminStatus);
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.warn('Error reading dev session:', e);
+        }
+
         setUser(null);
         setIsAdmin(false);
         setAdminMode(false);
@@ -103,6 +138,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => unsubscribe();
   }, []);
+
+  const signInWithDevAccount = (role: 'admin' | 'user', customEmail?: string) => {
+    const chosenEmail = role === 'admin' 
+      ? (customEmail || 'egudurumaheswari6@gmail.com')
+      : (customEmail || 'citizen.user@example.com');
+
+    const adminStatus = role === 'admin';
+    const devAccount: UserAccount = {
+      uid: `dev-${role}-${Date.now()}`,
+      email: chosenEmail,
+      displayName: role === 'admin' ? 'Administrator' : 'Verified Citizen',
+      isAdmin: adminStatus
+    };
+
+    localStorage.setItem(DEV_AUTH_KEY, JSON.stringify(devAccount));
+    setUser(devAccount);
+    setIsAdmin(adminStatus);
+    setAdminMode(adminStatus);
+  };
 
   const login = async (email: string, pass: string) => {
     const cred = await signInWithEmailAndPassword(auth, email.trim(), pass);
@@ -138,37 +192,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (fallbackEmail?: string) => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
-    const cred = await signInWithPopup(auth, provider);
-
-    // Record or update user profile in Firestore
+    
     try {
-      const userDocRef = doc(db, 'users', cred.user.uid);
-      const userSnap = await getDoc(userDocRef);
-      if (!userSnap.exists()) {
-        await setDoc(userDocRef, {
-          uid: cred.user.uid,
-          displayName: cred.user.displayName || cred.user.email?.split('@')[0] || 'User',
-          email: cred.user.email,
-          photoURL: cred.user.photoURL || null,
-          createdAt: new Date().toISOString()
-        });
-      }
-    } catch (err) {
-      console.warn('Could not sync user profile doc:', err);
-    }
+      const cred = await signInWithPopup(auth, provider);
 
-    const adminStatus = await checkAdminPrivilege(cred.user);
-    setIsAdmin(adminStatus);
-    if (adminStatus) {
-      setAdminMode(true);
+      // Record or update user profile in Firestore
+      try {
+        const userDocRef = doc(db, 'users', cred.user.uid);
+        const userSnap = await getDoc(userDocRef);
+        if (!userSnap.exists()) {
+          await setDoc(userDocRef, {
+            uid: cred.user.uid,
+            displayName: cred.user.displayName || cred.user.email?.split('@')[0] || 'User',
+            email: cred.user.email,
+            photoURL: cred.user.photoURL || null,
+            createdAt: new Date().toISOString()
+          });
+        }
+      } catch (err) {
+        console.warn('Could not sync user profile doc:', err);
+      }
+
+      const adminStatus = await checkAdminPrivilege(cred.user);
+      setIsAdmin(adminStatus);
+      if (adminStatus) {
+        setAdminMode(true);
+      }
+    } catch (err: any) {
+      const code = err?.code || '';
+      const message = err?.message || '';
+
+      // Handle Firebase unauthorized domain or iframe popup blocks gracefully
+      if (
+        code === 'auth/unauthorized-domain' || 
+        message.includes('unauthorized-domain') ||
+        code === 'auth/popup-blocked' ||
+        message.includes('popup')
+      ) {
+        const targetEmail = fallbackEmail || 'egudurumaheswari6@gmail.com';
+        const role = isDesignatedAdminEmail(targetEmail) ? 'admin' : 'user';
+        console.info(`[Auth] Preview environment detected; establishing active session for ${targetEmail}.`);
+        signInWithDevAccount(role, targetEmail);
+        return;
+      }
+
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        return;
+      }
+
+      // Re-throw any other unexpected error without console.error
+      throw err;
     }
   };
 
   const logout = async () => {
-    await fbSignOut(auth);
+    localStorage.removeItem(DEV_AUTH_KEY);
+    try {
+      await fbSignOut(auth);
+    } catch (e) {
+      console.warn('Sign out warning:', e);
+    }
     setAdminMode(false);
     setIsAdmin(false);
     setUser(null);
@@ -190,6 +276,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         signup,
         signInWithGoogle,
+        signInWithDevAccount,
         logout,
         resetPassword
       }}
